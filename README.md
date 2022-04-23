@@ -94,7 +94,61 @@ df
   border-radius: 5px;">
   <code style="color:tomato; line-height: 20%; ">
   
-  a
+  #library that contains punctuation
+import string
+string.punctuation
+
+#defining the function to remove punctuation
+def remove_punctuation(text):
+    punctuationfree="".join([i for i in text if i not in string.punctuation])
+    return punctuationfree
+#storing the puntuation free text
+data['clean_msg']= data['Article Title'].apply(lambda x:remove_punctuation(x))
+
+data['msg_lower']= data['clean_msg'].apply(lambda x: x.lower())
+
+from nltk.tokenize import word_tokenize
+data['tokenized_sents'] = data.apply(lambda row: word_tokenize(row['msg_lower']), axis=1)
+data = data[['tokenized_sents','Category']]
+
+import nltk
+#Stop words present in the library
+stopwords = nltk.corpus.stopwords.words('english')
+
+#defining the function to remove stopwords from tokenized text
+def remove_stopwords(text):
+    output= [i for i in text if i not in stopwords]
+    return output
+
+#applying the function
+data['no_stopwords']= data['tokenized_sents'].apply(lambda x:remove_stopwords(x))
+
+
+#importing the Stemming function from nltk library
+from nltk.stem.porter import PorterStemmer
+#defining the object for stemming
+porter_stemmer = PorterStemmer()
+
+#defining a function for stemming
+def stemming(text):
+    stem_text = [porter_stemmer.stem(word) for word in text]
+    return stem_text
+data['msg_stemmed']=data['no_stopwords'].apply(lambda x: stemming(x))
+
+data= data[['msg_stemmed','no_stopwords','Category']]
+
+#nltk.download('wordnet')
+from nltk.stem import WordNetLemmatizer
+#defining the object for Lemmatization
+wordnet_lemmatizer = WordNetLemmatizer()
+
+#defining the function for lemmatization
+def lemmatizer(text):
+    lemm_text = [wordnet_lemmatizer.lemmatize(word) for word in text]
+    return lemm_text
+data['msg_lemmatized']=data['no_stopwords'].apply(lambda x:lemmatizer(x))
+
+data= data[['msg_stemmed','msg_lemmatized','Category']]
 </code></pre>
 
 5. **Model Training** 🏃‍♂️: The data was good enough to be fitted on the used models and the results was greatly satisfying specially whith deep learning model (LSTM) than classical ML using ( Logistic Regression & Naive Bayes ).
@@ -103,11 +157,57 @@ df
 <pre style=" border: 2px groove;
   border-radius: 5px;">
   <code style="color:tomato; line-height: 20%; ">
-  v
+    tokenizer = Tokenizer(num_words=n_most_common_words, filters='!"#$%&()*+,-./:;<=>?@[\]^_`{|}~', lower=True)
+tokenizer.fit_on_texts(df['Final_Text'].values)
+
+word_index = tokenizer.word_index
+print("Unique Tokens are:",len(word_index))
+
+X = tokenizer.texts_to_sequences(df['Final_Text'].values)
+X = pad_sequences(X , maxlen=max_len)
+print("Shape of data tensor",X.shape)
+Y = pd.get_dummies(df['Category']).values
+print("Shape of label tensor",Y.shape)
+
+X_train, X_test, y_train, y_test = train_test_split(X, Y,  test_size=0.1, random_state=42)
+print(X_train.shape, X_test.shape, y_train.shape, y_test.shape)
+
+model = Sequential()
+model.add(Embedding(n_most_common_words+1,emb_dim,input_length=X.shape[1]))
+model.add(SpatialDropout1D(0.4))
+model.add(LSTM(100,dropout=0.2,recurrent_dropout=0.2))
+model.add(Dense(3,activation='softmax'))
+model.compile(loss='categorical_crossentropy' , optimizer='adam' ,metrics=['accuracy'])
+print(model.summary())
+
+my_callbacks=[  EarlyStopping(monitor = 'val_loss',min_delta = 0,patience = 2,verbose = 1,restore_best_weights = True) ,
+                ModelCheckpoint(filepath='model.{epoch:02d}-{val_loss:.2f}.h5',monitor='val_loss',mode='min',save_best_only=True,verbose=1)  ]
+history = model.fit(X_train,y_train,validation_data=(X_test,y_test),epochs=5,batch_size=128, callbacks=my_callbacks)
   
 </code></pre>
 6. **Project Deployment** 🎨: I used flask which is easy to use and give you the advantage of deploying your project as a web service.
-<pre><code>
+<pre style=" border: 2px groove;
+  border-radius: 5px;">
+  <code style="color:tomato; line-height: 20%; ">
+app = Flask(__name__)
 
+@app.route('/')
+def home():
+    return render_template('home.html')
+
+
+@app.route('/predict', methods=['POST'])
+def predict():
+    text = request.form['message']
+    seq = tokenizer.texts_to_sequences([text])
+    text = pad_sequences(seq, maxlen=max_len)
+    classes = model.predict(text)
+    labels=["Art","Economy","Sports"]
+    prediction = str(labels[np.argmax(classes)])
+    return render_template('After.html',data =prediction )
+
+if __name__ == '__main__':
+    app.run(debug=True)
+  
 </code></pre>
 
